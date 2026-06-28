@@ -19,6 +19,8 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class WallpaperCaptureSession(
     private val client: Minecraft,
@@ -41,9 +43,10 @@ class WallpaperCaptureSession(
         .resolve(sessionId)
     private val framesDir: Path = outputDir.resolve("frames")
     private val transitionsDir: Path = outputDir.resolve("loop-transitions")
+    private val captureIoThreads = preferredWorkerThreads()
     private val frameSignatureCache = mutableMapOf<Path, IntArray>()
     private val imageCache = mutableMapOf<Path, BufferedImage>()
-    private val workerExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+    private val workerExecutor: ExecutorService = Executors.newFixedThreadPool(captureIoThreads) { runnable ->
         Thread(runnable, "minecraftwallpapercreater-export").apply {
             isDaemon = true
         }
@@ -54,7 +57,6 @@ class WallpaperCaptureSession(
     @Volatile private var completionQueued = false
     private var originalHudHidden = false
     private var hudStateCaptured = false
-    private val framePaths = mutableListOf<Path>()
     private var transitionFrameCount = 0
     private var lastCaptureTimeNanos = Long.MIN_VALUE
     private var loopStartFrameIndex = 0
@@ -63,8 +65,8 @@ class WallpaperCaptureSession(
     private var finalPlaylistPath: Path? = null
     private var finalLoopInfoPath: Path? = null
     private var finalScriptPath: Path? = null
-    private var finalizeRequested = false
-    private var writtenFrames = 0
+    private val finalizeQueued = AtomicBoolean(false)
+    private val writtenFrames = AtomicInteger(0)
 
     fun start() {
         Files.createDirectories(framesDir)
@@ -124,7 +126,7 @@ class WallpaperCaptureSession(
 
         if (capturedFrames >= config.frameCount) {
             completionQueued = true
-            finalizeRequested = true
+            queueFinalizeWhenReady()
         }
     }
 
@@ -158,19 +160,10 @@ class WallpaperCaptureSession(
         image.use {
             try {
                 it.writeToFile(target)
-                framePaths.add(target)
-                writtenFrames++
-                logStatus(
-                    ClientText.tr(
-                        "message.minecraftwallpapercreater.capture.frame_saved",
-                        frameIndex + 1,
-                        config.frameCount,
-                        target.fileName.toString()
-                    )
-                )
-                if (finalizeRequested && !finished && writtenFrames >= config.frameCount) {
-                    finalizeRequested = false
-                    queueFinalizeExport()
+                val writtenCount = writtenFrames.incrementAndGet()
+                maybeLogFrameSaved(frameIndex, writtenCount, target)
+                if (completionQueued && !finished && writtenCount >= config.frameCount) {
+                    queueFinalizeWhenReady()
                 }
             } catch (exception: IOException) {
                 Minecraftwallpapercreater.LOGGER.error("Failed to write wallpaper frame {}", target, exception)
@@ -188,13 +181,16 @@ class WallpaperCaptureSession(
         }
     }
 
-    private fun queueFinalizeExport() {
+    private fun queueFinalizeWhenReady() {
+        if (!finalizeQueued.compareAndSet(false, true)) {
+            return
+        }
         workerExecutor.execute {
             if (finished) {
                 return@execute
             }
-            if (writtenFrames < config.frameCount) {
-                finalizeRequested = true
+            if (writtenFrames.get() < config.frameCount) {
+                finalizeQueued.set(false)
                 return@execute
             }
             finalizeExport()
@@ -216,7 +212,7 @@ class WallpaperCaptureSession(
             appendLine("hide_hud_while_capturing=${config.hideHudWhileCapturing}")
             appendLine("auto_blend_loop=${config.autoBlendLoop}")
             appendLine("blend_frame_count=${config.blendFrameCount}")
-            appendLine("captured_frames=${framePaths.size}")
+            appendLine("captured_frames=${writtenFrames.get()}")
             appendLine("loop_start_frame=$loopStartFrameIndex")
             appendLine("loop_end_frame_exclusive=$loopEndFrameExclusive")
             appendLine("loop_selection_score=${"%.6f".format(loopSelectionScore)}")
@@ -317,11 +313,35 @@ class WallpaperCaptureSession(
         Minecraftwallpapercreater.LOGGER.info(message.string)
     }
 
+    private fun maybeLogFrameSaved(frameIndex: Int, writtenCount: Int, target: Path) {
+        val shouldLog = writtenCount == 1
+            || writtenCount == config.frameCount
+            || writtenCount % 30 == 0
+
+        if (!shouldLog) {
+            return
+        }
+
+        logStatus(
+            ClientText.tr(
+                "message.minecraftwallpapercreater.capture.frame_saved",
+                frameIndex + 1,
+                config.frameCount,
+                target.fileName.toString()
+            )
+        )
+    }
+
     private fun frameFileName(index: Int): String = "frame-${index.toString().padStart(5, '0')}.png"
 
     private fun transitionFileName(index: Int): String = "transition-${index.toString().padStart(5, '0')}.png"
 
     companion object {
         private val SESSION_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+
+        private fun preferredWorkerThreads(): Int {
+            val processors = Runtime.getRuntime().availableProcessors()
+            return (processors / 2).coerceIn(2, 4)
+        }
     }
 }

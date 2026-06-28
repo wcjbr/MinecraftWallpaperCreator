@@ -1,5 +1,6 @@
 package arch.zero.minecraftwallpapercreater.client
 
+import arch.zero.minecraftwallpapercreater.MinecraftWallpaperCreaterShared
 import arch.zero.minecraftwallpapercreater.Minecraftwallpapercreater
 import net.minecraft.client.Minecraft
 import java.io.BufferedReader
@@ -10,6 +11,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 
 data class RustWorkerResult(
     val playlistPath: Path,
@@ -92,13 +94,16 @@ object RustWallpaperWorker {
     }
 
     private fun startProcess(client: Minecraft): Process {
+        val bundledBinary = extractBundledBinary(client)
+        val bundledTarget = bundledTarget()
         val projectRoot = locateProjectRoot(client)
-        val releaseBinary = candidateBinary(projectRoot, "rust/target/release/wallpaper-worker")
-        val debugBinary = candidateBinary(projectRoot, "rust/target/debug/wallpaper-worker")
+        val releaseBinary = candidateBinary(projectRoot, bundledTarget?.releaseRelativePath ?: "rust/target/release/wallpaper-worker")
+        val debugBinary = candidateBinary(projectRoot, bundledTarget?.debugRelativePath ?: "rust/target/debug/wallpaper-worker")
         val manifestPath = projectRoot?.resolve("rust/Cargo.toml")
         val useNice = System.getProperty("os.name").lowercase().contains("linux")
 
         val workerCommand = when {
+            bundledBinary != null -> listOf(bundledBinary.toString())
             releaseBinary != null -> listOf(releaseBinary.toString())
             debugBinary != null -> listOf(debugBinary.toString())
             manifestPath != null && Files.exists(manifestPath) -> listOf(
@@ -130,6 +135,68 @@ object RustWallpaperWorker {
             .directory((projectRoot ?: Paths.get("").toAbsolutePath()).toFile())
             .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start()
+    }
+
+    private fun extractBundledBinary(client: Minecraft): Path? {
+        val bundledTarget = bundledTarget() ?: return null
+        val resource = javaClass.getResourceAsStream(bundledTarget.resourcePath) ?: return null
+        val cacheDir = client.gameDirectory.toPath()
+            .resolve(".cache")
+            .resolve(MinecraftWallpaperCreaterShared.MOD_ID)
+            .resolve("native")
+        Files.createDirectories(cacheDir)
+
+        val target = cacheDir.resolve(bundledTarget.binaryName)
+        resource.use { input ->
+            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING)
+        }
+
+        target.toFile().setExecutable(true, true)
+        return target
+    }
+
+    private fun bundledTarget(): BundledTarget? {
+        val osName = System.getProperty("os.name").lowercase()
+        val arch = System.getProperty("os.arch").lowercase()
+
+        return when {
+            osName.contains("linux") && (arch == "x86_64" || arch == "amd64") ->
+                BundledTarget(
+                    resourcePath = "/minecraftwallpapercreater/native/linux-x86_64/wallpaper-worker",
+                    binaryName = "wallpaper-worker",
+                    releaseRelativePath = "rust/target/x86_64-unknown-linux-gnu/release/wallpaper-worker",
+                    debugRelativePath = "rust/target/x86_64-unknown-linux-gnu/debug/wallpaper-worker"
+                )
+            osName.contains("linux") && (arch == "aarch64" || arch == "arm64") ->
+                BundledTarget(
+                    resourcePath = "/minecraftwallpapercreater/native/linux-aarch64/wallpaper-worker",
+                    binaryName = "wallpaper-worker",
+                    releaseRelativePath = "rust/target/aarch64-unknown-linux-gnu/release/wallpaper-worker",
+                    debugRelativePath = "rust/target/aarch64-unknown-linux-gnu/debug/wallpaper-worker"
+                )
+            osName.contains("windows") && (arch == "x86_64" || arch == "amd64") ->
+                BundledTarget(
+                    resourcePath = "/minecraftwallpapercreater/native/windows-x86_64/wallpaper-worker.exe",
+                    binaryName = "wallpaper-worker.exe",
+                    releaseRelativePath = "rust/target/x86_64-pc-windows-gnu/release/wallpaper-worker.exe",
+                    debugRelativePath = "rust/target/x86_64-pc-windows-gnu/debug/wallpaper-worker.exe"
+                )
+            osName.contains("mac") && (arch == "x86_64" || arch == "amd64") ->
+                BundledTarget(
+                    resourcePath = "/minecraftwallpapercreater/native/macos-x86_64/wallpaper-worker",
+                    binaryName = "wallpaper-worker",
+                    releaseRelativePath = "rust/target/x86_64-apple-darwin/release/wallpaper-worker",
+                    debugRelativePath = "rust/target/x86_64-apple-darwin/debug/wallpaper-worker"
+                )
+            osName.contains("mac") && (arch == "aarch64" || arch == "arm64") ->
+                BundledTarget(
+                    resourcePath = "/minecraftwallpapercreater/native/macos-aarch64/wallpaper-worker",
+                    binaryName = "wallpaper-worker",
+                    releaseRelativePath = "rust/target/aarch64-apple-darwin/release/wallpaper-worker",
+                    debugRelativePath = "rust/target/aarch64-apple-darwin/debug/wallpaper-worker"
+                )
+            else -> null
+        }
     }
 
     private fun candidateBinary(projectRoot: Path?, relative: String): Path? {
@@ -164,4 +231,11 @@ object RustWallpaperWorker {
 
         return null
     }
+
+    private data class BundledTarget(
+        val resourcePath: String,
+        val binaryName: String,
+        val releaseRelativePath: String,
+        val debugRelativePath: String
+    )
 }

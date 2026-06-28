@@ -2,6 +2,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -23,7 +24,7 @@ base {
 }
 
 val rustWorkspaceDir = layout.projectDirectory.dir("rust")
-val rustWorkerReleaseBinary = rustWorkspaceDir.file("target/release/wallpaper-worker")
+val rustWorkerResourceDir = layout.buildDirectory.dir("generated/rust-worker-resources")
 val generatedMappingsDir = layout.buildDirectory.dir("generated/mappings").get().asFile.toPath()
 val generatedMappingsTiny = generatedMappingsDir.resolve("mappings.tiny")
 val generatedMappingsJar = generatedMappingsDir.resolve("placeholder-mappings.jar")
@@ -31,6 +32,98 @@ val hmclClothConfigJar = providers.gradleProperty("hmcl_cloth_config_jar")
     .orElse("/home/archzero/.config/hmcl/.minecraft/versions/XPlus PerioTable based on Minecraft 26.1.2 (Fabric)/mods/cloth-config-26.1.154.jar")
 val hmclBasicMathJar = providers.gradleProperty("hmcl_basic_math_jar")
     .orElse("/home/archzero/.gradle/caches/modules-2/files-2.1/me.shedaniel.cloth/basic-math/0.6.1/2ddd64b22126332794a5754ff9b942e17fb44c39/basic-math-0.6.1.jar")
+
+data class RustBundleTarget(
+    val triple: String,
+    val resourcePlatformDir: String,
+    val binaryName: String,
+    val linkerEnvName: String? = null,
+    val linkerPropertyName: String? = null,
+    val defaultLinker: String? = null
+) {
+    val taskSuffix: String = triple.split('-', '_')
+        .joinToString("") { part ->
+            part.replaceFirstChar { char ->
+                if (char.isLowerCase()) char.titlecase(Locale.ROOT) else char.toString()
+            }
+        }
+
+    val outputRelativePath: String
+        get() = "target/$triple/release/$binaryName"
+
+    val resourcePath: String
+        get() = "minecraftwallpapercreater/native/$resourcePlatformDir"
+}
+
+val rustBundleTargets = listOf(
+    RustBundleTarget(
+        triple = "x86_64-unknown-linux-gnu",
+        resourcePlatformDir = "linux-x86_64",
+        binaryName = "wallpaper-worker"
+    ),
+    RustBundleTarget(
+        triple = "aarch64-unknown-linux-gnu",
+        resourcePlatformDir = "linux-aarch64",
+        binaryName = "wallpaper-worker",
+        linkerEnvName = "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER",
+        linkerPropertyName = "rust_linker_aarch64_unknown_linux_gnu",
+        defaultLinker = "aarch64-linux-gnu-gcc"
+    ),
+    RustBundleTarget(
+        triple = "x86_64-pc-windows-gnu",
+        resourcePlatformDir = "windows-x86_64",
+        binaryName = "wallpaper-worker.exe",
+        linkerEnvName = "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER",
+        linkerPropertyName = "rust_linker_x86_64_pc_windows_gnu",
+        defaultLinker = "x86_64-w64-mingw32-gcc"
+    ),
+    RustBundleTarget(
+        triple = "x86_64-apple-darwin",
+        resourcePlatformDir = "macos-x86_64",
+        binaryName = "wallpaper-worker",
+        linkerEnvName = "CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER",
+        linkerPropertyName = "rust_linker_x86_64_apple_darwin"
+    ),
+    RustBundleTarget(
+        triple = "aarch64-apple-darwin",
+        resourcePlatformDir = "macos-aarch64",
+        binaryName = "wallpaper-worker",
+        linkerEnvName = "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER",
+        linkerPropertyName = "rust_linker_aarch64_apple_darwin"
+    )
+)
+
+val requestedRustBundleTargets = (findProperty("rust_bundle_targets") as String?)
+    ?.split(',')
+    ?.map(String::trim)
+    ?.filter(String::isNotEmpty)
+    ?.toSet()
+    ?: rustBundleTargets.map { it.triple }.toSet()
+
+val selectedRustBundleTargets = rustBundleTargets.filter { it.triple in requestedRustBundleTargets }
+val hostRustBundleTarget = run {
+    val osName = System.getProperty("os.name").lowercase(Locale.ROOT)
+    val arch = System.getProperty("os.arch").lowercase(Locale.ROOT)
+    rustBundleTargets.firstOrNull { target ->
+        when (target.triple) {
+            "x86_64-unknown-linux-gnu" -> osName.contains("linux") && (arch == "x86_64" || arch == "amd64")
+            "aarch64-unknown-linux-gnu" -> osName.contains("linux") && (arch == "aarch64" || arch == "arm64")
+            "x86_64-pc-windows-gnu" -> osName.contains("windows") && (arch == "x86_64" || arch == "amd64")
+            "x86_64-apple-darwin" -> osName.contains("mac") && (arch == "x86_64" || arch == "amd64")
+            "aarch64-apple-darwin" -> osName.contains("mac") && (arch == "aarch64" || arch == "arm64")
+            else -> false
+        }
+    }
+}
+
+check(selectedRustBundleTargets.isNotEmpty()) {
+    "No rust bundle targets selected. Set -Prust_bundle_targets=<comma-separated target triples>."
+}
+
+val unknownRustTargets = requestedRustBundleTargets - rustBundleTargets.map { it.triple }.toSet()
+check(unknownRustTargets.isEmpty()) {
+    "Unknown rust bundle targets requested: ${unknownRustTargets.joinToString(", ")}"
+}
 
 fun patchRuntimeNamespaceInJar(jarPath: Path): Boolean {
     if (!Files.exists(jarPath)) {
@@ -117,19 +210,65 @@ run {
     }
 }
 
-val buildRustWorkerRelease by tasks.registering(Exec::class) {
-    group = "build"
-    description = "Builds the Rust wallpaper worker in release mode."
-    workingDir = layout.projectDirectory.asFile
-    commandLine("cargo", "build", "--release", "--manifest-path", "rust/Cargo.toml", "-p", "wallpaper-worker")
-    inputs.files(
-        fileTree(rustWorkspaceDir) {
-            include("**/*.rs")
-            include("**/Cargo.toml")
-            include("**/Cargo.lock")
+val buildRustWorkerTasks = selectedRustBundleTargets.associateWith { target ->
+    tasks.register<Exec>("buildRustWorker${target.taskSuffix}") {
+        group = "build"
+        description = "Builds the Rust wallpaper worker for ${target.triple}."
+        workingDir = rustWorkspaceDir.asFile
+        commandLine(
+            "cargo", "build", "--release",
+            "--target", target.triple,
+            "--manifest-path", "Cargo.toml",
+            "-p", "wallpaper-worker"
+        )
+        inputs.files(
+            fileTree(rustWorkspaceDir) {
+                include("**/*.rs")
+                include("**/Cargo.toml")
+                include("**/Cargo.lock")
+            }
+        )
+        outputs.file(rustWorkspaceDir.file(target.outputRelativePath))
+
+        doFirst {
+            val linkerEnvName = target.linkerEnvName
+            val linkerPropertyName = target.linkerPropertyName
+            if (linkerEnvName == null || linkerPropertyName == null) {
+                return@doFirst
+            }
+
+            val configuredLinker = (findProperty(linkerPropertyName) as String?)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: target.defaultLinker
+
+            check(!configuredLinker.isNullOrBlank()) {
+                "Missing linker for ${target.triple}. Set -P${linkerPropertyName}=<linker-path>."
+            }
+
+            environment(linkerEnvName, configuredLinker)
+            logger.lifecycle("Building Rust worker for {} using linker {}", target.triple, configuredLinker)
         }
-    )
-    outputs.file(rustWorkerReleaseBinary)
+    }
+}
+
+val buildRustWorkers by tasks.registering {
+    group = "build"
+    description = "Builds the Rust wallpaper worker for all selected bundle targets."
+    dependsOn(buildRustWorkerTasks.values)
+}
+
+val syncRustWorkerResources by tasks.registering(Sync::class) {
+    group = "build"
+    description = "Copies Rust wallpaper workers into generated resources for packaging."
+    dependsOn(buildRustWorkers)
+    into(rustWorkerResourceDir)
+
+    selectedRustBundleTargets.forEach { target ->
+        from(rustWorkspaceDir.file(target.outputRelativePath)) {
+            into(target.resourcePath)
+        }
+    }
 }
 
 val patchOfficialRuntimeTweakers by tasks.registering {
@@ -217,6 +356,7 @@ dependencies {
 }
 
 tasks.processResources {
+    dependsOn(syncRustWorkerResources)
     val minecraftVersion = project.property("minecraft_version") as String
     val loaderVersion = project.property("loader_version") as String
     val kotlinLoaderVersion = project.property("kotlin_loader_version") as String
@@ -225,6 +365,7 @@ tasks.processResources {
     inputs.property("minecraft_version", minecraftVersion)
     inputs.property("loader_version", loaderVersion)
     filteringCharset = "UTF-8"
+    from(rustWorkerResourceDir)
 
     filesMatching("fabric.mod.json") {
         expand(
@@ -259,9 +400,19 @@ tasks.withType<JavaExec>().configureEach {
     dependsOn(patchOfficialRuntimeTweakers)
 }
 
-tasks.matching { it.name == "runClient" || it.name == "assemble" || it.name == "build" }
+tasks.matching { it.name == "runClient" }
     .configureEach {
-        dependsOn(buildRustWorkerRelease)
+        val hostTask = hostRustBundleTarget?.let(buildRustWorkerTasks::get)
+        if (hostTask != null) {
+            dependsOn(hostTask)
+        } else {
+            dependsOn(buildRustWorkers)
+        }
+    }
+
+tasks.matching { it.name == "assemble" || it.name == "build" }
+    .configureEach {
+        dependsOn(buildRustWorkers)
     }
 
 // configure the maven publication
