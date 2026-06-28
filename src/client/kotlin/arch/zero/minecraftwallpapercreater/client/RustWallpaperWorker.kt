@@ -1,7 +1,7 @@
 package arch.zero.minecraftwallpapercreater.client
 
 import arch.zero.minecraftwallpapercreater.Minecraftwallpapercreater
-import net.minecraft.client.MinecraftClient
+import net.minecraft.client.Minecraft
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
@@ -26,7 +26,7 @@ data class RustWorkerResult(
 )
 
 object RustWallpaperWorker {
-    fun run(client: MinecraftClient, sessionDir: Path, config: WallpaperConfig): RustWorkerResult {
+    fun run(client: Minecraft, sessionDir: Path, config: WallpaperConfig): RustWorkerResult {
         val process = startProcess(client)
         val request = buildString {
             appendLine("session_dir=${sessionDir.toAbsolutePath()}")
@@ -91,7 +91,7 @@ object RustWallpaperWorker {
         )
     }
 
-    private fun startProcess(client: MinecraftClient): Process {
+    private fun startProcess(client: Minecraft): Process {
         val projectRoot = locateProjectRoot(client)
         val releaseBinary = candidateBinary(projectRoot, "rust/target/release/wallpaper-worker")
         val debugBinary = candidateBinary(projectRoot, "rust/target/debug/wallpaper-worker")
@@ -137,7 +137,7 @@ object RustWallpaperWorker {
         return if (Files.exists(path)) path else null
     }
 
-    private fun locateProjectRoot(client: MinecraftClient): Path? {
+    private fun locateProjectRoot(client: Minecraft): Path? {
         val envRoot = System.getenv("MWC_PROJECT_ROOT")?.takeIf { it.isNotBlank() }?.let(Paths::get)
         val codeSourceRoot = runCatching {
             Paths.get(
@@ -147,7 +147,7 @@ object RustWallpaperWorker {
 
         val anchors = listOfNotNull(
             envRoot,
-            client.runDirectory.toPath().toAbsolutePath(),
+            client.gameDirectory.toPath().toAbsolutePath(),
             Paths.get("").toAbsolutePath(),
             codeSourceRoot?.toAbsolutePath()
         )

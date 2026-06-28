@@ -1,17 +1,16 @@
 package arch.zero.minecraftwallpapercreater.client
 
 import arch.zero.minecraftwallpapercreater.Minecraftwallpapercreater
-import net.minecraft.client.MinecraftClient
-import net.minecraft.text.Text
+import net.minecraft.client.Minecraft
 
 object WallpaperExporter {
     private var activeSession: WallpaperCaptureSession? = null
 
-    fun startCapture(client: MinecraftClient) {
+    fun startCapture(client: Minecraft) {
         startCapture(client, WallpaperConfigStore.get(client))
     }
 
-    fun startCapture(client: MinecraftClient, frameCount: Int, frameIntervalTicks: Int, targetFps: Int) {
+    fun startCapture(client: Minecraft, frameCount: Int, frameIntervalTicks: Int, targetFps: Int) {
         startCapture(
             client,
             WallpaperConfig(
@@ -22,13 +21,13 @@ object WallpaperExporter {
         )
     }
 
-    fun startCapture(client: MinecraftClient, config: WallpaperConfig) {
+    fun startCapture(client: Minecraft, config: WallpaperConfig) {
         if (activeSession != null) {
             notify(client, "message.minecraftwallpapercreater.capture.already_running")
             return
         }
 
-        if (client.world == null || client.player == null) {
+        if (client.level == null || client.player == null) {
             notify(client, "message.minecraftwallpapercreater.capture.world_required")
             return
         }
@@ -48,7 +47,7 @@ object WallpaperExporter {
         }
     }
 
-    fun tick(client: MinecraftClient) {
+    fun tick(client: Minecraft) {
         val session = activeSession ?: return
         session.tick()
         if (session.isFinished()) {
@@ -56,7 +55,7 @@ object WallpaperExporter {
         }
     }
 
-    fun render(client: MinecraftClient) {
+    fun render(client: Minecraft) {
         val session = activeSession ?: return
         session.render()
         if (session.isFinished()) {
@@ -64,7 +63,7 @@ object WallpaperExporter {
         }
     }
 
-    fun cancel(client: MinecraftClient) {
+    fun cancel(client: Minecraft) {
         val session = activeSession ?: run {
             notify(client, "message.minecraftwallpapercreater.capture.no_active")
             return
@@ -76,9 +75,9 @@ object WallpaperExporter {
 
     fun isCapturing(): Boolean = activeSession != null
 
-    fun defaultConfig(client: MinecraftClient): WallpaperConfig = WallpaperConfigStore.get(client)
+    fun defaultConfig(client: Minecraft): WallpaperConfig = WallpaperConfigStore.get(client)
 
-    fun saveConfig(client: MinecraftClient, config: WallpaperConfig): WallpaperConfig {
+    fun saveConfig(client: Minecraft, config: WallpaperConfig): WallpaperConfig {
         return WallpaperConfigStore.save(client, config)
     }
 
@@ -101,9 +100,9 @@ object WallpaperExporter {
         false
     }
 
-    private fun notify(client: MinecraftClient, key: String, vararg args: Any) {
+    private fun notify(client: Minecraft, key: String, vararg args: Any) {
         val text = ClientText.tr(key, *args)
         Minecraftwallpapercreater.LOGGER.info(text.string)
-        client.player?.sendMessage(text, false)
+        client.player?.sendSystemMessage(text)
     }
 }

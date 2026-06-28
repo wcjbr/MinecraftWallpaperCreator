@@ -1,12 +1,12 @@
 package arch.zero.minecraftwallpapercreater.client
 
 import me.shedaniel.clothconfig2.api.ConfigBuilder
-import net.minecraft.client.gui.screen.Screen
-import net.minecraft.text.Text
+import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.screens.Screen
 
 object WallpaperConfigScreen {
     fun create(parent: Screen?): Screen {
-        val client = net.minecraft.client.MinecraftClient.getInstance()
+        val client = Minecraft.getInstance()
         val current = WallpaperExporter.defaultConfig(client)
         val edited = EditedWallpaperConfig(current)
 

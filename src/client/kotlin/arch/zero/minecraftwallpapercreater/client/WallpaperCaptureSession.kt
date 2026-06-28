@@ -1,11 +1,11 @@
 package arch.zero.minecraftwallpapercreater.client
 
 import arch.zero.minecraftwallpapercreater.Minecraftwallpapercreater
-import net.minecraft.client.MinecraftClient
-import net.minecraft.client.gl.Framebuffer
-import net.minecraft.client.texture.NativeImage
-import net.minecraft.client.util.ScreenshotRecorder
-import net.minecraft.text.Text
+import com.mojang.blaze3d.pipeline.RenderTarget
+import com.mojang.blaze3d.platform.NativeImage
+import net.minecraft.client.Minecraft
+import net.minecraft.client.Screenshot
+import net.minecraft.network.chat.Component
 import java.awt.image.BufferedImage
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -21,7 +21,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class WallpaperCaptureSession(
-    private val client: MinecraftClient,
+    private val client: Minecraft,
     private val config: WallpaperConfig
 ) {
     private data class LoopPlan(
@@ -36,7 +36,7 @@ class WallpaperCaptureSession(
 
     private val captureIntervalNanos = (1_000_000_000.0 / config.targetFps).toLong().coerceAtLeast(1L)
     private val sessionId = SESSION_TIME_FORMAT.format(LocalDateTime.now())
-    private val outputDir: Path = client.runDirectory.toPath()
+    private val outputDir: Path = client.gameDirectory.toPath()
         .resolve("wallpaper-exports")
         .resolve(sessionId)
     private val framesDir: Path = outputDir.resolve("frames")
@@ -93,7 +93,7 @@ class WallpaperCaptureSession(
             return
         }
 
-        if (client.world == null) {
+        if (client.level == null) {
             finishEarly(ClientText.tr("message.minecraftwallpapercreater.capture.world_unloaded"))
             return
         }
@@ -109,7 +109,7 @@ class WallpaperCaptureSession(
             return
         }
 
-        if (client.world == null || client.player == null) {
+        if (client.level == null || client.player == null) {
             return
         }
 
@@ -119,7 +119,7 @@ class WallpaperCaptureSession(
         }
 
         lastCaptureTimeNanos = now
-        captureCurrentFrame(client.getFramebuffer())
+        captureCurrentFrame(client.getMainRenderTarget())
         capturedFrames++
 
         if (capturedFrames >= config.frameCount) {
@@ -130,7 +130,7 @@ class WallpaperCaptureSession(
 
     fun isFinished(): Boolean = finished
 
-    fun cancel(message: Text) {
+    fun cancel(message: Component) {
         if (finished) {
             return
         }
@@ -140,10 +140,10 @@ class WallpaperCaptureSession(
         workerExecutor.shutdownNow()
     }
 
-    private fun captureCurrentFrame(framebuffer: Framebuffer) {
+    private fun captureCurrentFrame(framebuffer: RenderTarget) {
         val frameIndex = capturedFrames
         val target = framesDir.resolve(frameFileName(frameIndex))
-        ScreenshotRecorder.takeScreenshot(framebuffer) { image ->
+        Screenshot.takeScreenshot(framebuffer) { image ->
             queueFrameWrite(frameIndex, image, target)
         }
     }
@@ -157,7 +157,7 @@ class WallpaperCaptureSession(
     private fun writeFrame(frameIndex: Int, image: NativeImage, target: Path) {
         image.use {
             try {
-                it.writeTo(target)
+                it.writeToFile(target)
                 framePaths.add(target)
                 writtenFrames++
                 logStatus(
@@ -223,7 +223,7 @@ class WallpaperCaptureSession(
             appendLine("transition_frames=$transitionFrameCount")
             appendLine("loop_enabled=${config.autoBlendLoop && transitionFrameCount > 0}")
             appendLine("renderer_stack=${detectRendererStack()}")
-            appendLine("world_loaded=${client.world != null}")
+            appendLine("world_loaded=${client.level != null}")
         }
         Files.writeString(outputDir.resolve("capture.properties"), content, StandardCharsets.UTF_8)
     }
@@ -266,10 +266,10 @@ class WallpaperCaptureSession(
             return
         }
 
-        originalHudHidden = client.options.hudHidden
+        originalHudHidden = client.options.hideGui
         hudStateCaptured = true
         if (config.hideHudWhileCapturing) {
-            client.options.hudHidden = true
+            client.options.hideGui = true
         }
     }
 
@@ -278,11 +278,11 @@ class WallpaperCaptureSession(
             return
         }
 
-        client.options.hudHidden = originalHudHidden
+        client.options.hideGui = originalHudHidden
         hudStateCaptured = false
     }
 
-    private fun finishEarly(message: Text) {
+    private fun finishEarly(message: Component) {
         finished = true
         restoreHudState()
         postStatus(message)
@@ -306,14 +306,14 @@ class WallpaperCaptureSession(
         false
     }
 
-    private fun postStatus(message: Text) {
+    private fun postStatus(message: Component) {
         Minecraftwallpapercreater.LOGGER.info(message.string)
         client.execute {
-            client.player?.sendMessage(message, false)
+            client.player?.sendSystemMessage(message)
         }
     }
 
-    private fun logStatus(message: Text) {
+    private fun logStatus(message: Component) {
         Minecraftwallpapercreater.LOGGER.info(message.string)
     }
 

@@ -2,7 +2,7 @@ package arch.zero.minecraftwallpapercreater.client
 
 import arch.zero.minecraftwallpapercreater.MinecraftWallpaperCreaterShared
 import com.google.gson.GsonBuilder
-import net.minecraft.client.MinecraftClient
+import net.minecraft.client.Minecraft
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,7 +43,7 @@ object WallpaperConfigStore {
     private val gson = GsonBuilder().setPrettyPrinting().create()
     private var cachedConfig: WallpaperConfig? = null
 
-    fun get(client: MinecraftClient): WallpaperConfig {
+    fun get(client: Minecraft): WallpaperConfig {
         cachedConfig?.let { return it }
 
         val path = configPath(client)
@@ -61,7 +61,7 @@ object WallpaperConfigStore {
         return loaded
     }
 
-    fun save(client: MinecraftClient, config: WallpaperConfig): WallpaperConfig {
+    fun save(client: Minecraft, config: WallpaperConfig): WallpaperConfig {
         val normalized = config.normalized()
         val path = configPath(client)
         Files.createDirectories(path.parent)
@@ -72,7 +72,7 @@ object WallpaperConfigStore {
         return normalized
     }
 
-    private fun configPath(client: MinecraftClient): Path = client.runDirectory.toPath()
+    private fun configPath(client: Minecraft): Path = client.gameDirectory.toPath()
         .resolve("config")
         .resolve("${MinecraftWallpaperCreaterShared.MOD_ID}.json")
 }

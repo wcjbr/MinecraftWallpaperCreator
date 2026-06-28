@@ -40,6 +40,7 @@
   "message.minecraftwallpapercreater.capture.world_unloaded": "[壁纸] 采集已取消：当前未加载世界。",
   "message.minecraftwallpapercreater.capture.frame_saved": "[壁纸] 已采集帧 %s/%s -> %s",
   "message.minecraftwallpapercreater.capture.write_failed": "[壁纸] 写入 %s 时采集失败：%s",
+  "message.minecraftwallpapercreater.capture.config_unavailable": "[壁纸] 当前运行构建未提供配置界面。",
   "message.minecraftwallpapercreater.capture.ready": "[壁纸] 壁纸导出完成：%s",
   "message.minecraftwallpapercreater.capture.finalize_failed": "[壁纸] 导出收尾失败：%s"
 }

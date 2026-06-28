@@ -40,6 +40,7 @@
   "message.minecraftwallpapercreater.capture.world_unloaded": "[Wallpaper] Capture canceled: no world is loaded.",
   "message.minecraftwallpapercreater.capture.frame_saved": "[Wallpaper] Captured frame %s/%s -> %s",
   "message.minecraftwallpapercreater.capture.write_failed": "[Wallpaper] Capture failed while writing %s: %s",
+  "message.minecraftwallpapercreater.capture.config_unavailable": "[Wallpaper] Config UI is unavailable in the current runtime build.",
   "message.minecraftwallpapercreater.capture.ready": "[Wallpaper] Wallpaper export ready: %s",
   "message.minecraftwallpapercreater.capture.finalize_failed": "[Wallpaper] Capture finalize failed: %s"
 }

@@ -43,19 +43,17 @@
 
 项目已接入 `Mod Menu` + `Cloth Config` 配置入口。
 
-当前开发环境默认从你的本地 HMCL 实例读取：
+当前构建默认直接从 Maven 拉取 `Mod Menu` 和 `Cloth Config`：
 
 ```text
-/home/archzero/.config/hmcl/.minecraft/versions/1.21.11-Fabric/mods/modmenu-17.0.0.jar
-/home/archzero/.config/hmcl/.minecraft/versions/1.21.11-Fabric/mods/cloth-config-21.11.153-fabric.jar
-/home/archzero/.config/hmcl/.minecraft/versions/1.21.11-Fabric/.fabric/processedMods/cloth-basic-math-*.jar
+com.terraformersmc:modmenu:${modmenu_version}
+me.shedaniel.cloth:cloth-config-fabric:${cloth_config_version}
 ```
 
-如果你之后换实例或换版本，只要同步修改 `gradle.properties` 里的：
+如果你之后换版本，只要同步修改 `gradle.properties` 里的：
 
-- `hmcl_instance_dir`
-- `modmenu_jar_name`
-- `cloth_config_jar_name`
+- `modmenu_version`
+- `cloth_config_version`
 
 ## 输出目录
 
@@ -86,18 +84,21 @@ bash wallpaper-loop.sh
 
 ## 已对齐的本地测试环境
 
-本项目当前按以下 HMCL 实例版本做静态适配：
+本分支当前构建基线：
 
 ```text
-/home/archzero/.config/hmcl/.minecraft/versions/1.21.11-Fabric
+Minecraft 1.21.11
+Fabric Loader 0.19.3
+Fabric API 0.141.4+1.21.11
+Fabric Language Kotlin 1.13.12+kotlin.2.4.0
 ```
 
-该实例中已确认存在：
+说明：
 
-- `iris-fabric-1.10.7+mc1.21.11.jar`
-- `sodium-fabric-0.8.7+mc1.21.11.jar`
-- `fabric-api-0.141.3+1.21.11.jar`
-- `fabric-language-kotlin-1.13.10+kotlin.2.3.20.jar`
+- `mc-26.1.2` 分支已开始迁移到新命名规则版本线。
+- 截至 2026-06-28，官方 Fabric `loader` / `fabric-api` 已提供 `26.1.2`，
+  但官方 `Yarn` feed 仍没有 `26.x` 映射条目，所以分支暂时保留最后可构建的
+  `1.21.11` mappings 作为编译基线，等待官方映射发布后再完成最终切换。
 
 ## 限制
 

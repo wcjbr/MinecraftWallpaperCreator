@@ -2,66 +2,93 @@ package arch.zero.minecraftwallpapercreater.client
 
 import arch.zero.minecraftwallpapercreater.MinecraftWallpaperCreaterShared
 import arch.zero.minecraftwallpapercreater.Minecraftwallpapercreater
+import com.mojang.blaze3d.platform.InputConstants
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
 import net.fabricmc.api.ClientModInitializer
-import net.minecraft.client.option.KeyBinding
-import net.minecraft.client.util.InputUtil
-import net.minecraft.util.Identifier
+import net.minecraft.client.KeyMapping
+import net.minecraft.client.Minecraft
+import net.minecraft.client.Options
+import net.minecraft.resources.Identifier
 import org.lwjgl.glfw.GLFW
 
 class MinecraftwallpapercreaterClient : ClientModInitializer {
-    private val captureHudElementId = Identifier.of(MinecraftWallpaperCreaterShared.MOD_ID, "capture_hook")
-    private lateinit var captureKeyBinding: KeyBinding
-    private lateinit var configKeyBinding: KeyBinding
+    private val captureHudElementId = Identifier.fromNamespaceAndPath(MinecraftWallpaperCreaterShared.MOD_ID, "capture_hook")
+    private lateinit var captureKeyBinding: KeyMapping
+    private lateinit var configKeyBinding: KeyMapping
+    private var keyMappingsRegistered = false
 
     override fun onInitializeClient() {
-        val category = KeyBinding.Category.create(
-            Identifier.of("minecraftwallpapercreater", "main")
+        val category = KeyMapping.Category.register(
+            Identifier.fromNamespaceAndPath("minecraftwallpapercreater", "main")
         )
 
-        captureKeyBinding = KeyBindingHelper.registerKeyBinding(
-            KeyBinding(
-                "key.minecraftwallpapercreater.capture",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_F8,
-                category
-            )
+        captureKeyBinding = KeyMapping(
+            "key.minecraftwallpapercreater.capture",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_F8,
+            category
         )
 
-        configKeyBinding = KeyBindingHelper.registerKeyBinding(
-            KeyBinding(
-                "key.minecraftwallpapercreater.config",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_F9,
-                category
-            )
+        configKeyBinding = KeyMapping(
+            "key.minecraftwallpapercreater.config",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_F9,
+            category
         )
 
         ClientTickEvents.END_CLIENT_TICK.register(ClientTickEvents.EndTick { client ->
-            while (captureKeyBinding.wasPressed()) {
+            if (!keyMappingsRegistered) {
+                val options = client.options
+                if (options != null) {
+                    registerKeyMapping(options, captureKeyBinding)
+                    registerKeyMapping(options, configKeyBinding)
+                    keyMappingsRegistered = true
+                }
+            }
+
+            while (captureKeyBinding.consumeClick()) {
                 WallpaperExporter.startCapture(client)
             }
-            while (configKeyBinding.wasPressed()) {
-                client.setScreen(WallpaperConfigScreen.create(client.currentScreen))
+            while (configKeyBinding.consumeClick()) {
+                if (hasClothConfig()) {
+                    client.setScreen(WallpaperConfigScreen.create(client.screen))
+                } else {
+                    client.player?.sendSystemMessage(
+                        ClientText.tr("message.minecraftwallpapercreater.capture.config_unavailable")
+                    )
+                }
             }
             WallpaperExporter.tick(client)
         })
 
-        HudElementRegistry.addLast(captureHudElementId) { _, _ ->
-            val client = net.minecraft.client.MinecraftClient.getInstance()
+        LevelRenderEvents.END_MAIN.register(LevelRenderEvents.EndMain {
+            val client = Minecraft.getInstance()
             WallpaperExporter.render(client)
-        }
+        })
 
         Minecraftwallpapercreater.LOGGER.info(
-            "Client initializer active. Renderer stack={}, HMCL test instance={}",
-            WallpaperExporter.rendererSummary(),
-            HMCL_TEST_INSTANCE
+            "Client initializer active. Renderer stack={}",
+            WallpaperExporter.rendererSummary()
         )
     }
 
-    companion object {
-        private const val HMCL_TEST_INSTANCE = "/home/archzero/.config/hmcl/.minecraft/versions/1.21.11-Fabric"
+    private fun registerKeyMapping(options: Options, keyMapping: KeyMapping) {
+        val field = Options::class.java.getDeclaredField("keyMappings")
+        field.isAccessible = true
+        val current = field.get(options) as Array<KeyMapping>
+        if (current.any { it.name == keyMapping.name }) {
+            return
+        }
+        field.set(options, current + keyMapping)
+        KeyMapping.resetMapping()
+        options.save()
+    }
+
+    private fun hasClothConfig(): Boolean = try {
+        Class.forName("me.shedaniel.clothconfig2.api.ConfigBuilder", false, javaClass.classLoader)
+        true
+    } catch (_: ClassNotFoundException) {
+        false
     }
 }
