@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraftwallpapercreater",
+  "version": "${version}",
+  "name": "MinecraftWallpaperCreater",
+  "description": "Capture in-game frames into looping wallpaper exports and generate mpv playlists with Iris/Sodium-aware client behavior.",
+  "authors": [
+    "archzero"
+  ],
+  "contact": {
+    "sources": "local-workspace"
+  },
+  "license": "Apache-2.0",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "arch.zero.minecraftwallpapercreater.client.MinecraftwallpapercreaterDataGenerator"
+    ],
+    "client": [
+      "arch.zero.minecraftwallpapercreater.client.MinecraftwallpapercreaterClient"
+    ],
+    "modmenu": [
+      "arch.zero.minecraftwallpapercreater.client.MinecraftWallpaperCreaterModMenu"
+    ],
+    "main": [
+      "arch.zero.minecraftwallpapercreater.Minecraftwallpapercreater"
+    ]
+  },
+  "mixins": [
+    "minecraftwallpapercreater.mixins.json",
+    {
+      "config": "minecraftwallpapercreater.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-language-kotlin": ">=${kotlin_loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
